@@ -1,0 +1,286 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SignalCraft · 抖音选题台</title>
+<style>
+:root{color-scheme:light;--paper:#f6f4ef;--card:#fffdf8;--ink:#192b24;--muted:#55635c;--line:#dedfd6;--accent:#12664d;--orange:#ffbf87;font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;color:var(--ink);background:var(--paper)}
+*{box-sizing:border-box}body{margin:0}button,input,select{font:inherit}button,select{cursor:pointer}button,input,select{border:1px solid var(--line);border-radius:8px;padding:.58rem .74rem;background:var(--card);color:var(--ink)}button:hover{border-color:var(--accent)}button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid var(--accent);outline-offset:2px}button[aria-pressed=true],.primary{background:var(--accent);color:white;border-color:var(--accent)}
+header{padding:1.1rem max(5vw,1rem);background:#133d32;color:#fff;display:flex;justify-content:space-between;gap:1rem;align-items:center}.brand{font-size:1.15rem;letter-spacing:.06em;font-weight:800}.badge{font-size:.8rem;color:#402918;background:var(--orange);padding:.35rem .7rem;border-radius:50px}
+main{max-width:1320px;margin:auto;padding:0 4vw 3rem}.intro{padding:2.2rem 0 1.35rem;border-bottom:1px solid var(--line)}h1{font-size:clamp(2rem,5vw,3.6rem);margin:0 0 .45rem;letter-spacing:-.045em}p{margin:.4rem 0;color:var(--muted);line-height:1.65}
+nav,.actions,.fields,.chips{display:flex;gap:.55rem;flex-wrap:wrap;align-items:center}nav{padding:1.15rem 0}nav button{padding:.7rem 1.05rem}.panel{background:var(--card);border:1px solid var(--line);border-radius:15px;padding:1rem;margin-bottom:1rem}.fields{align-items:end}.field{display:grid;gap:.32rem;color:var(--muted);font-size:.84rem}.query{flex:1 1 245px}.field input,.field select{width:100%;min-height:2.5rem}.chips{margin-top:.9rem}.chips button{font-size:.82rem}.toolbar{display:flex;align-items:center;justify-content:space-between;gap:.75rem;flex-wrap:wrap;margin:.9rem 0}.toolbar strong{font-size:1.15rem}.table-wrap{overflow:auto;border:1px solid var(--line);border-radius:12px;background:var(--card)}table{border-collapse:collapse;width:100%;min-width:670px;text-align:left}th,td{padding:.78rem .75rem;border-bottom:1px solid var(--line);font-size:.87rem}th{background:#e8eee8;white-space:nowrap}th button{border:0;background:transparent;padding:.15rem;font-weight:700}td small{display:block;color:var(--muted);margin-top:.28rem}td:first-child{width:43%}.title-button{padding:0;border:0;text-align:left;font-weight:750;background:transparent}.cover{display:inline-grid;place-items:center;width:42px;height:33px;background:#dcebdc;border-radius:6px;color:#164e3d;font-size:.68rem;margin-right:.55rem}.empty{padding:2rem;text-align:center!important}.footer{padding-top:1rem;font-size:.83rem}dialog{border:1px solid var(--line);border-radius:15px;background:var(--card);color:var(--ink);width:min(550px,calc(100% - 2rem));padding:1.4rem}dialog::backdrop{background:#14282088}.dialog-head{display:flex;justify-content:space-between;gap:1rem;align-items:center}a{color:var(--accent)}.notice{min-height:1.5rem;color:var(--accent);font-size:.86rem}.pager{justify-content:flex-end;margin-top:.7rem}.pager button:disabled{opacity:.45;cursor:default}
+</style>
+</head>
+<body>
+<header><span class="brand">SignalCraft</span><span class="badge" id="source">演示数据</span></header>
+<main>
+<section class="intro"><h1>抖音选题台</h1><p>筛选作品、追踪创作者，把值得研究的内容收进选题清单。</p></section>
+<nav aria-label="内容模块" id="views"></nav>
+<section class="panel" aria-label="筛选条件">
+<form id="filters"><div class="fields" id="fields"></div></form>
+<div class="chips" id="chips" aria-label="分类"></div>
+</section>
+<div class="toolbar"><strong id="count" aria-live="polite"></strong><div class="actions">
+<button id="cover" aria-pressed="false">显示分类占位</button><button id="save-view">保存筛选</button><select id="saved" aria-label="已保存的筛选"><option value="">已保存的筛选</option></select><button id="remove-view" hidden>删除筛选</button><button id="import">导入 JSON</button><button id="export" class="primary">导出 CSV</button>
+<input type="file" accept=".json,application/json" id="file" hidden>
+</div></div>
+<div class="notice" id="notice" role="status"></div>
+<div class="table-wrap" tabindex="0" aria-label="结果表格，可横向滚动"><table><thead id="head"></thead><tbody id="rows"></tbody></table></div>
+<div class="actions pager" id="pager"></div>
+<p class="footer">内置数据为虚构样例。可导入自有或获授权的 JSON。收藏、关注和筛选保存在此浏览器。<a href="https://www.douyin.com/hot" target="_blank" rel="noopener">打开抖音热点</a></p>
+</main>
+<dialog id="detail"><div class="dialog-head"><h2 id="detail-title"></h2><form method="dialog"><button>关闭</button></form></div><div id="detail-body"></div></dialog>
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const config = {
+  videos: {name:'作品检索',first:'作品', metrics:{date:'发布时间',likes:'点赞',comments:'评论',shares:'分享',saves:'收藏'}, sort:'likes', date:true},
+  accounts: {name:'账号发现',first:'账号', metrics:{posts:'作品数',followers:'粉丝',likes:'获赞'}, sort:'followers'},
+  trends: {name:'热点观察',first:'话题', metrics:{date:'榜单日期',heat:'热度'}, sort:'heat',date:true}
+};
+const groups = ['AI工具','智能硬件','出海实战','生活家居','科技数码','效率办公'];
+const authors = ['效率工坊','硬件观察室','出海手记','家居实验室','桌面研究社','办公研究社'];
+const topics = [
+  ['把会议录音变成待办清单','国产 AI 工具的三种办公用法','普通人如何搭一个知识库'],
+  ['智能摄像头应该装在哪里','Matter 网关选型先看哪三点','水墨屏环境仪能省多少电'],
+  ['用展会目录找海外经销商','一页讲清工厂的出海卖点','如何整理紧固件客户线索'],
+  ['给老房加装智能窗帘','小户型传感器怎么布局','智能家居离线时怎么用'],
+  ['桌面拾音器的对比方法','三个常见 USB-C 配件误区','桌面充电站的布线思路'],
+  ['一份周报如何复用三次','Excel 订单图表整理','项目交接清单怎么写']
+];
+const dateAgo = age => {
+  const now = new Date();
+  now.setDate(now.getDate() - age);
+  return [now.getFullYear(),String(now.getMonth()+1).padStart(2,'0'),String(now.getDate()).padStart(2,'0')].join('-');
+};
+const demo = {
+  videos:topics.flatMap((titles,g)=>titles.map((title,i)=>({
+    id:'demo-v'+g+i,title,author:authors[g],category:groups[g],date:dateAgo(g+i),likes:23000-g*2420-i*1620,comments:960-g*83-i*112,shares:1690-g*184-i*155,saves:3300-g*280-i*370
+  }))),
+  accounts:authors.map((title,g)=>({id:'demo-a'+g,title,category:groups[g],posts:74+g*29,followers:560000-g*78000,likes:3250000-g*480000})),
+  trends:groups.flatMap((category,g)=>[0,1].map(i=>({id:'demo-t'+g+i,title:topics[g][0],category,date:dateAgo(i),heat:8900000-g*640000-i*290000})))
+};
+function read(key,fallback) {
+  try {return JSON.parse(localStorage.getItem('signalcraft-douyin-'+key)) ?? fallback;} catch {return fallback;}
+}
+function write(key,value) {
+  try {localStorage.setItem('signalcraft-douyin-'+key,JSON.stringify(value));return true;}
+  catch {say('浏览器无法保存，改动仅在本次打开期间有效。');return false;}
+}
+let imported=read('data',{});
+let saved=read('views',[]);
+let marked=new Set(read('marked',[]));
+let view='videos', page=1, showCover=false;
+const size=8;
+const fresh=()=>({query:'',match:'any',from:'',to:'',metric:'',minimum:'',categories:[],marked:false,sort:config[view].sort,descending:true});
+let filters=fresh();
+const say=message=>{$('notice').textContent=message;};
+const el=(tag,value)=>{const node=document.createElement(tag);if(value!==undefined)node.textContent=value;return node;};
+const button=(label,fn)=>{const node=el('button',label);node.type='button';node.onclick=fn;return node;};
+const option=(value,label)=>{const node=el('option',label);node.value=value;return node;};
+const metricKeys=()=>Object.keys(config[view].metrics).filter(key=>key!=='date');
+const fmt=new Intl.NumberFormat('zh-CN');
+const items=()=>imported[view]??demo[view];
+const markKey=item=>view+':'+item.id;
+function buildFilters() {
+  $('views').replaceChildren(...Object.entries(config).map(([key,{name}])=>{
+    const node=button(name,()=>{view=key;filters=fresh();page=1;say('');buildFilters();render();});
+    node.setAttribute('aria-pressed',String(key===view));return node;
+  }));
+  const nodes=[];
+  function field(key,label,options,type='text') {
+    const wrapper=el('label',label);
+    wrapper.className='field'+(key==='query'?' query':'');
+    const input=el(options?'select':'input');
+    input.name=key;
+    if(options) input.append(...options.map(([value,text])=>option(value,text)));
+    else input.type=type;
+    if(key==='query') input.placeholder=view==='accounts'?'输入创作者名称':'多个关键词用空格分隔';
+    if(type==='number') input.min='0';
+    input.value=filters[key];
+    wrapper.append(input);nodes.push(wrapper);
+  }
+  field('query','关键词');
+  field('match','匹配方式',[['any','任意词'],['all','全部词'],['exact','完整短语']]);
+  if(config[view].date){field('from','开始日期',null,'date');field('to','结束日期',null,'date');}
+  field('metric','互动指标',[['','不限'],...metricKeys().map(k=>[k,config[view].metrics[k]])]);
+  field('minimum','最低数量',null,'number');
+  const submit=el('button','检索');submit.className='primary';submit.type='submit';
+  nodes.push(submit,button('重置',()=>{filters=fresh();page=1;say('');buildFilters();render();}));
+  $('fields').replaceChildren(...nodes);
+  const categories=[...new Set(items().map(item=>item.category))];
+  const chip=(label,selected,fn)=>{const node=button(label,fn);node.setAttribute('aria-pressed',String(selected));return node;};
+  $('chips').replaceChildren(
+    chip('全部分类',!filters.categories.length,()=>{filters.categories=[];page=1;buildFilters();render();}),
+    ...categories.map(category=>chip(category,filters.categories.includes(category),()=>{
+      filters.categories=filters.categories.includes(category)?filters.categories.filter(x=>x!==category):[...filters.categories,category];
+      page=1;buildFilters();render();
+    })),
+    chip('仅看已关注 / 收藏',filters.marked,()=>{filters.marked=!filters.marked;page=1;buildFilters();render();})
+  );
+  $('source').textContent=Object.hasOwn(imported,view)?'用户导入数据':'演示数据';
+}
+$('filters').onsubmit=event=>{
+  event.preventDefault();
+  const values=Object.fromEntries(new FormData(event.currentTarget));
+  if(values.from && values.to && values.from>values.to){say('开始日期应早于或等于结束日期。');return;}
+  Object.assign(filters,values);page=1;say('');render();
+};
+function selected() {
+  const query=filters.query.trim().toLowerCase();
+  return items().filter(item=>{
+    if(filters.categories.length && !filters.categories.includes(item.category))return false;
+    if(filters.marked && !marked.has(markKey(item)))return false;
+    if(filters.from && item.date<filters.from || filters.to && item.date>filters.to)return false;
+    if(filters.metric && filters.minimum!=='' && item[filters.metric]<Number(filters.minimum))return false;
+    const haystack=[item.title,item.author,item.category].join(' ').toLowerCase();
+    if(!query)return true;
+    if(filters.match==='exact')return haystack.includes(query);
+    const words=query.split(/\s+/);
+    return filters.match==='all'?words.every(word=>haystack.includes(word)):words.some(word=>haystack.includes(word));
+  }).sort((a,b)=>{
+    const key=filters.sort;
+    const order=typeof a[key]==='number'?a[key]-b[key]:String(a[key]).localeCompare(String(b[key]));
+    return filters.descending?-order:order;
+  });
+}
+function render() {
+  const data=selected(), {first,metrics}=config[view];
+  const maxPage=Math.max(1,Math.ceil(data.length/size));
+  page=Math.min(page,maxPage);
+  $('count').textContent='匹配 '+fmt.format(data.length)+' 条';
+  const heading=el('tr');heading.append(el('th',first));
+  for(const [key,name] of Object.entries(metrics)){
+    const cell=el('th'), active=filters.sort===key;
+    cell.setAttribute('aria-sort',active?(filters.descending?'descending':'ascending'):'none');
+    cell.append(button(name+(active?(filters.descending?' ↓':' ↑'):''),()=>{
+      filters.descending=key===filters.sort?!filters.descending:true;filters.sort=key;page=1;render();
+    }));heading.append(cell);
+  }
+  heading.append(el('th','操作'));$('head').replaceChildren(heading);
+  $('rows').replaceChildren(...data.slice((page-1)*size,page*size).map(item=>{
+    const row=el('tr'), title=el('td');
+    const name=button(item.title,()=>openDetail(item));name.className='title-button';
+    if(showCover){const cover=el('span',item.category.slice(0,4));cover.className='cover';cover.setAttribute('aria-hidden','true');title.append(cover);}
+    title.append(name,el('small',[item.author,item.category].filter(Boolean).join(' · ')));row.append(title);
+    for(const key of Object.keys(metrics))row.append(el('td',key==='date'?item[key]:fmt.format(item[key])));
+    const action=el('td'), tracked=marked.has(markKey(item));
+    const toggle=button(tracked?'已加入':view==='accounts'?'关注':'收藏',()=>{
+      if(tracked)marked.delete(markKey(item));else marked.add(markKey(item));
+      if(write('marked',[...marked]))say(tracked?'已移出清单。':'已加入清单。');
+      render();
+    });
+    toggle.setAttribute('aria-pressed',String(tracked));action.append(toggle);row.append(action);return row;
+  }));
+  if(!data.length){const row=el('tr'), cell=el('td','没有符合条件的记录。');cell.className='empty';cell.colSpan=Object.keys(metrics).length+2;row.append(cell);$('rows').append(row);}
+  const prev=button('上一页',()=>{page--;render();}), next=button('下一页',()=>{page++;render();});
+  prev.disabled=page===1;next.disabled=page===maxPage;
+  $('pager').replaceChildren(prev,el('span',page+' / '+maxPage),next);
+  $('export').disabled=!data.length;
+}
+function openDetail(item) {
+  $('detail-title').textContent=item.title;
+  const body=$('detail-body');
+  body.replaceChildren(el('p',[item.author,item.category].filter(Boolean).join(' · ')),
+    ...Object.entries(config[view].metrics).map(([key,label])=>el('p',label+'　'+(key==='date'?item[key]:fmt.format(item[key])))));
+  if(item.url){
+    const link=el('a','查看来源');link.href=item.url;link.target='_blank';link.rel='noopener';
+    body.append(link,button('复制来源链接',async()=>{
+      try {await navigator.clipboard.writeText(item.url);say('已复制来源链接。');$('detail').close();}
+      catch {say('复制未成功。可从来源链接手动复制。');$('detail').close();}
+    }));
+  }
+  $('detail').showModal();
+}
+function showSaved(selectedIndex='') {
+  $('saved').replaceChildren(option('','已保存的筛选'),...saved.map((item,i)=>option(String(i),config[item.view].name+' · '+item.name)));
+  $('saved').value=selectedIndex;
+  $('remove-view').hidden=selectedIndex==='';
+}
+$('save-view').onclick=()=>{
+  const name=prompt('为当前筛选命名',config[view].name+'筛选')?.trim();
+  if(!name)return;
+  const existing=saved.findIndex(item=>item.name===name && item.view===view);
+  const entry={name,view,filters:structuredClone(filters)};
+  const index=existing<0?saved.push(entry)-1:existing;
+  saved[index]=entry;
+  showSaved(String(index));if(write('views',saved))say('筛选已保存。');
+};
+$('saved').onchange=event=>{
+  const value=event.target.value;
+  $('remove-view').hidden=value==='';
+  if(value==='')return;
+  const picked=saved[Number(value)];
+  view=picked.view;filters=structuredClone(picked.filters);page=1;say('');buildFilters();render();
+};
+$('remove-view').onclick=()=>{
+  const index=$('saved').value;
+  if(index==='')return;
+  saved.splice(Number(index),1);showSaved();if(write('views',saved))say('已删除保存的筛选。');
+};
+$('cover').onclick=()=>{showCover=!showCover;$('cover').setAttribute('aria-pressed',String(showCover));render();};
+function safeUrl(value) {
+  try {const url=new URL(value);return ['https:','http:'].includes(url.protocol)?url.href:'';}catch{return '';}
+}
+function normalize(raw) {
+  if(!raw || typeof raw!=='object' || Array.isArray(raw))throw new Error('JSON 须包含 videos、accounts 或 trends 数组。');
+  const data={};
+  for(const key of Object.keys(config)){
+    if(!Object.hasOwn(raw,key))continue;
+    if(!Array.isArray(raw[key]))throw new Error(key+' 必须是数组。');
+    const ids=new Set();
+    data[key]=raw[key].map((item,i)=>{
+      const prefix=key+' 第 '+(i+1)+' 条：';
+      if(!item || typeof item.title!=='string' || !item.title.trim())throw new Error(prefix+'缺少 title。');
+      const id=String(item.id??i+1);
+      if(ids.has(id))throw new Error(prefix+'id 重复。');
+      ids.add(id);
+      const normalized={id:'import-'+id,title:item.title.trim(),category:String(item.category??'未分类'),author:String(item.author??''),url:safeUrl(item.url)};
+      for(const metric of Object.keys(config[key].metrics)){
+        if(metric==='date'){
+          const date=typeof item.date==='string'?item.date:'';
+          const parsed=new Date(date+'T00:00:00Z');
+          if(!/^\d{4}-\d{2}-\d{2}$/.test(date)||isNaN(parsed)||parsed.toISOString().slice(0,10)!==date)throw new Error(prefix+'date 应为有效的 YYYY-MM-DD。');
+          normalized.date=date;
+        }else{
+          const value=item[metric]??0;
+          if(!Number.isSafeInteger(value)||value<0)throw new Error(prefix+metric+' 应为非负整数。');
+          normalized[metric]=value;
+        }
+      }
+      return normalized;
+    });
+  }
+  if(!Object.keys(data).length)throw new Error('没有可导入的模块。');
+  return data;
+}
+$('import').onclick=()=>$('file').click();
+$('file').onchange=async event=>{
+  const file=event.target.files[0];if(!file)return;
+  try{
+    const newData=normalize(JSON.parse(await file.text()));
+    imported={...imported,...newData};
+    view=Object.hasOwn(newData,view)?view:Object.keys(newData)[0];
+    filters=fresh();page=1;buildFilters();render();
+    if(write('data',imported))say('导入成功，当前显示 '+config[view].name+'。');
+  }catch(error){say('导入失败。'+error.message);}
+  finally{event.target.value='';}
+};
+function csvCell(value) {
+  const text=String(value??'');
+  const safe=/^\s*[=+@-]|^[\t\r\n]/.test(text)? "'"+text:text;
+  return '"'+safe.replaceAll('"','""')+'"';
+}
+$('export').onclick=()=>{
+  const keys=Object.keys(config[view].metrics);
+  const labels=['标题','作者','分类',...keys.map(k=>config[view].metrics[k]),'来源链接','数据类型'];
+  const source=Object.hasOwn(imported,view)?'用户导入':'演示';
+  const lines=[labels,...selected().map(item=>[item.title,item.author,item.category,...keys.map(k=>item[k]),item.url,source])];
+  const blob=new Blob(['\ufeff'+lines.map(line=>line.map(csvCell).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8'});
+  const url=URL.createObjectURL(blob), a=el('a');a.href=url;a.download='signalcraft-'+view+'.csv';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
+};
+showSaved();buildFilters();render();
+</script>
+</body>
+</html>
